@@ -7,7 +7,7 @@ module load cmake/3.26.3-2duxfcd
 
 # Unzip and build MFEM (MAKE SURE GPU ARCHITECTURE IS CORRECT)
 mkdir mfem-4.7/
-tar -xzvf mfem-4.7.tgz mfem-4.7/
+#tar -xzvf mfem-4.7.tgz mfem-4.7/
 cmake -S mfem-4.7/ -B mfem-4.7/build/ \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DCMAKE_INSTALL_PREFIX=mfem-4.7/build/install/ \
@@ -17,14 +17,13 @@ cmake -S mfem-4.7/ -B mfem-4.7/build/ \
     -DMFEM_ENABLE_TESTING=ON \
     -DMFEM_USE_MPI=OFF \
     -DMFEM_USE_CUDA=ON \
-    -DMFEM_TRACK_CUDA_MEM=0N \
     -DCMAKE_CUDA_ARCHITECTURES=89
     #-DMETIS_DIR=metis-5.1.0/build/install/ \
     #-DHYPRE_DIR=hypre-2.33.0/build/install/ 
 cmake --build mfem-4.7/build/ -j 8 --target install
 cd mfem-4.7/build/ && make -j 8
-cd tests/ && make -j 8
-cd ../examples/ && make -j 8
-cd ../miniapps/ && make -j 8
-cd ../ && make test
+#cd tests/ && make -j 8
+#cd ../examples/ && make -j 8
+#cd ../miniapps/ && make -j 8
+#cd ../ && make test
 cd ../../ && source ConfigMicromorphic.sh

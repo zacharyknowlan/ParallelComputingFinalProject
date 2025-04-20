@@ -3,7 +3,7 @@ import gmsh
 # Parameters
 MeshFilename = "/lore/knowlz/ParallelComputingProject/UnitSquare.msh"
 SideLength = 1.
-MeshSize = SideLength/100.
+MeshSize = SideLength/2.
 
 gmsh.initialize()
 
