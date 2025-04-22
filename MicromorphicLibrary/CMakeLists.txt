@@ -1,5 +1,7 @@
 set(SOURCES MicromorphicIntegrator.cpp MicromorphicPartialAssembly.cpp)
-set_source_files_properties(${SOURCES} PROPERTIES LANGUAGE CUDA)
+if(MFEM_USE_CUDA)
+    set_source_files_properties(${SOURCES} PROPERTIES LANGUAGE CUDA)
+endif()
 add_library(MicromorphicLibrary ${SOURCES})
 target_include_directories(MicromorphicLibrary PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 target_link_libraries(MicromorphicLibrary PUBLIC mfem)

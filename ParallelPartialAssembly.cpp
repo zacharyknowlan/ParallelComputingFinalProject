@@ -2,6 +2,8 @@
 #include <string>
 #include "mfem.hpp"
 #include "MicromorphicIntegrator.hpp"
+#include <chrono>
+#include <iostream>
  
 int main(int argc, char** argv)
 {   
@@ -16,6 +18,9 @@ int main(int argc, char** argv)
     //mfem::Device device("cpu"); // used for serial timing
     mfem::Device device("cuda");
     device.Print();
+
+    // Start the total finite element solve timer
+    auto start_fe = std::chrono::system_clock::now();
 
     // Create mesh from file and finite element spaces 
     auto mesh = mfem::Mesh(MeshFile.c_str(), 1, 1);
@@ -90,7 +95,7 @@ int main(int argc, char** argv)
     u_space.GetEssentialTrueDofs(LeftEdge, uBCDOFs);
     phi_space.GetEssentialTrueDofs(LeftEdge, phiBCDOFs);
 
-    mfem::Array<int> GlobalBCDOFs(uBCDOFs.Size() + phiBCDOFs.Size()); //device.GetMemoryType());
+    mfem::Array<int> GlobalBCDOFs(uBCDOFs.Size() + phiBCDOFs.Size());
     int offset = uBCDOFs.Size();
     int u_size = u_space.GetVSize();
     for (int ii=0; ii<uBCDOFs.Size(); ii++) {GlobalBCDOFs[ii] = uBCDOFs[ii];}
@@ -181,6 +186,10 @@ int main(int argc, char** argv)
     for (int ii=0; ii<a1_diag.Size(); ii++) {GlobalDiag[ii] = a1_diag[ii];}
     for (int ii=0; ii<a4_diag.Size(); ii++) {GlobalDiag[ii+block_offsets[1]] = a4_diag[ii];}
 
+    // Start the solver timer and print CUDA block size used
+    std::cout << "CUDA Block Size Used: " << MFEM_CUDA_BLOCKS << "\n";
+    auto start_solver = std::chrono::system_clock::now();
+
     // Solve the linear system
     auto preconditioner = mfem::OperatorJacobiSmoother(GlobalDiag, GlobalBCDOFs, 1.0);
     auto solver = mfem::GMRESSolver();
@@ -194,19 +203,30 @@ int main(int argc, char** argv)
     solver.SetPrintLevel(1);
     solver.Mult(b, x);
 
+    // End solver timer and print elapsed time
+    auto end_solver = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsed_solver_time = end_solver - start_solver;
+    std::cout << "Solver Elapsed Time: " << elapsed_solver_time.count() << "\n";
+
     // Create gridfunctions of the solution
     if (device.IsEnabled()) {x.HostRead();}
     mfem::GridFunction u, phi;
     u.MakeRef(&u_space, x.GetBlock(0), 0);
     phi.MakeRef(&phi_space, x.GetBlock(1), 0);
 
-    // Save result
+    // End the finite element solve timer and print elapsed time
+    auto end_fe = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsed_fe_time = end_fe - start_fe;
+    std::cout << "Total Finite Element Elapsed Time: " << elapsed_fe_time.count() << "\n";
+
+    /* // Uncommment to save results (this is done in serial and takes a long time for bigger problems)
     std::ofstream file(ResultFilename);
     file.precision(16);
     mesh.PrintVTK(file, 0);
     u.SaveVTK(file, "u", 0);
     phi.SaveVTK(file, "phi", 0);
     file.close();
+    */
 
     return 0;
 }

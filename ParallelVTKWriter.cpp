@@ -8,24 +8,25 @@
 
 int main(int argc, char** argv) 
 {
+    // Initialize MPI environment and get rank variables
     MPI_Init(&argc, &argv);
-
     int WorldRank, WorldSize;
     MPI_Comm_rank(MPI_COMM_WORLD, &WorldRank);
     MPI_Comm_size(MPI_COMM_WORLD, &WorldSize);
     MPI_Request req_data, req_np, req_nc, req_size;
 
-    // Creating mesh and finite element spaces on each rank is very inefficient 
-    // but is the only option within the time horizon of this project
+    // Create mesh and VTKwriter
     std::string MeshFile = "../UnitSquare.msh";
     auto mesh = mfem::Mesh(MeshFile.c_str(), 1, 1);
+    auto writer = VTKWriter(mesh);
+    
+    // Misc. variables
     int dim = mesh.SpaceDimension();
     mfem::H1_FECollection *u_ec, *phi_ec;
     mfem::FiniteElementSpace *u_space, *phi_space;
     mfem::GridFunction u, phi;
     mfem::BlockVector x;
     int np, nc, size;
-    auto writer = VTKWriter(mesh); // Initialize mesh writer
 
     // The 2nd to last rank needs to have a copy of u_space
     if (WorldSize >= 3  && WorldRank == (WorldSize-2))
@@ -45,13 +46,13 @@ int main(int argc, char** argv)
     }
     else if (WorldRank == 0)
     {
-        // Precompute np, nc, and size on Rank WorldSize-2
+        // Precompute np, nc, and size on rank 0
         writer.SetupWriteParameters();
         np = writer.GetNumPoints();
         nc = writer.GetNumElements();
         size = writer.GetElementDataSize();
 
-        if (WorldSize > 1)
+        if (WorldSize > 1) // If not serial send to other ranks
         {    
             for (int ii=1; ii<WorldSize; ii++)
             {
@@ -62,7 +63,10 @@ int main(int argc, char** argv)
         }
     }
 
-    // The last rank solves the problem
+    // Solve the problem on rank WorldSize-1
+    // This is done because this rank always writes either the displacment or 
+    // micro displacement gradient values and thus avoids storing aditional copies 
+    // of the finite element spaces.
     if (WorldRank == (WorldSize-1))
     {
         double Mu = 454545.45454545453;
@@ -206,7 +210,7 @@ int main(int argc, char** argv)
         u.MakeRef(u_space, x.GetBlock(0), 0);
         phi.MakeRef(phi_space, x.GetBlock(1), 0);
 
-        // Send u GridFunction to the second to last rank
+        // Send u GridFunction data to the second to last rank if WorldSize >= 3
         if (WorldSize >= 3)
         {
             MPI_Send(u.GetData(), u.Size(), MPI_DOUBLE, WorldRank-1, 1, MPI_COMM_WORLD);
@@ -216,9 +220,9 @@ int main(int argc, char** argv)
     // All ranks must wait for the solution to continue
     MPI_Barrier(MPI_COMM_WORLD);
 
+    // Start file writing timer
     std::chrono::time_point<std::chrono::system_clock> start;
-
-    if (WorldRank == 0) {start = std::chrono::system_clock::now();} // Start timer
+    if (WorldRank == 0) {start = std::chrono::system_clock::now();}
 
     bool RankWritePoints = false;
     bool RankWriteElements = false;
@@ -251,14 +255,14 @@ int main(int argc, char** argv)
     // Create the output file and write to it
     std::string filename = "../result" + std::to_string(WorldSize) + ".vtk";
     MPI_File file;
-    MPI_File_open(MPI_COMM_WORLD, filename.c_str(), MPI_MODE_CREATE, MPI_INFO_NULL, &file);
+    MPI_File_open(MPI_COMM_WORLD, filename.c_str(), MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
     MPI_File_write_at(file, offset, RankData.c_str(), RankDataSize, MPI_CHAR, MPI_STATUS_IGNORE);
     MPI_File_close(&file);
-    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD); // Make sure all ranks get here before ending timer
 
     if (WorldRank == 0) 
     {
-        auto end = std::chrono::system_clock::now();
+        auto end = std::chrono::system_clock::now(); // End timer
         std::chrono::duration<double> elapsed_time = end - start;
         std::cout << "WorldSize: " << WorldSize << "\n";
         std::cout << "File Write Time: " << elapsed_time.count() << "\n";
