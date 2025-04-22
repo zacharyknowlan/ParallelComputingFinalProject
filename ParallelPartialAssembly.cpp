@@ -13,7 +13,7 @@ int main(int argc, char** argv)
     double ls = 0.1;
 
     // Tell MFEM about the device
-    //mfem::Device device("cpu");
+    //mfem::Device device("cpu"); // used for serial timing
     mfem::Device device("cuda");
     device.Print();
 
@@ -43,6 +43,8 @@ int main(int argc, char** argv)
     block_offsets[2] = phi_space.GetVSize();
     block_offsets.PartialSum();
 
+    std::cout << "Total DOF: " << block_offsets[2] << "\n";
+
     // Initialize solution, RHS, and aux vectors
     auto x = mfem::BlockVector(block_offsets);
     auto b = mfem::BlockVector(block_offsets);
@@ -69,14 +71,13 @@ int main(int argc, char** argv)
     mfem::Array<int> uBCDOFs, phiBCDOFs, phi0BCDOFs;
     mfem::Array<int> LeftEdge({0, 0, 0, 1, 0});
 
+    // Populate solution vector with non-zero essential boundary condition values
+    phi_space.GetEssentialTrueDofs(LeftEdge, phi0BCDOFs, 0);
     if (device.IsEnabled())
     {
         x.HostWrite();
         negative_x.HostWrite();
     }
-
-    // Populate solution vector with non-zero essential boundary condition values
-    phi_space.GetEssentialTrueDofs(LeftEdge, phi0BCDOFs, 0);
     for (int ii=0; ii<phi0BCDOFs.Size(); ii++)
     {
         x.GetBlock(1)[phi0BCDOFs[ii]] = 0.001;
@@ -143,7 +144,7 @@ int main(int argc, char** argv)
     for (int ii=0; ii<phiBCDOFs.Size(); ii++) {b.GetBlock(1)[phiBCDOFs[ii]] = 0.;}
     for (int ii=0; ii<phi0BCDOFs.Size(); ii++) {b.GetBlock(1)[phi0BCDOFs[ii]] = 0.001;}
     b.SyncFromBlocks();
-    
+
     // Create a constrained representation of the block operator
     mfem::ConstrainedOperator a1_constrained(&a1, uBCDOFs);
     mfem::RectangularConstrainedOperator a2_constrained(&a2, phiBCDOFs, uBCDOFs);
