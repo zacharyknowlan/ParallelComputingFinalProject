@@ -1,9 +1,10 @@
 import gmsh
+import math
 
 # Parameters
 MeshFilename = "/lore/knowlz/ParallelComputingProject/UnitSquare.msh"
 SideLength = 1.
-MeshSize = SideLength/20.
+MeshSize = SideLength/math.sqrt(500000)
 
 gmsh.initialize()
 
