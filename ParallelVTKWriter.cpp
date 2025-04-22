@@ -1,11 +1,10 @@
 #include <mpi.h>
-#include <vector>
-#include <iostream>
-#include <sstream>
 #include <string>
-#include <numeric>
 #include "mfem.hpp"
 #include "MicromorphicIntegrator.hpp"
+#include "VTKWriter.hpp"
+#include <chrono>
+#include <iostream>
 
 int main(int argc, char** argv) 
 {
@@ -26,6 +25,7 @@ int main(int argc, char** argv)
     mfem::GridFunction u, phi;
     mfem::BlockVector x;
     int np, nc, size;
+    auto writer = VTKWriter(mesh); // Initialize mesh writer
 
     // The 2nd to last rank needs to have a copy of u_space
     if (WorldSize >= 3  && WorldRank == (WorldSize-2))
@@ -36,36 +36,29 @@ int main(int argc, char** argv)
         MPI_Irecv(u.GetData(), u.Size(), MPI_DOUBLE, WorldRank+1, 1, MPI_COMM_WORLD, &req_data);
     }
 
-    // Each rank less than than rank WorldSize-2 recieves the data
-    if (WorldRank < (WorldSize-2))
+    // Each rank other than rank 0 needs to recieve the precomputed data from writer
+    if (WorldRank > 0)
     {
-        MPI_Irecv(&np, 1, MPI_INT, (WorldSize-2), (2+WorldRank), MPI_COMM_WORLD, &req_np);
-        MPI_Irecv(&nc, 1, MPI_INT, (WorldSize-2), (2+WorldRank*WorldSize), MPI_COMM_WORLD, &req_nc);
-        MPI_Irecv(&size, 1, MPI_INT, (WorldSize-2), (2+2*WorldRank*WorldSize), MPI_COMM_WORLD, &req_size);
+        MPI_Irecv(&np, 1, MPI_INT, 0, 2, MPI_COMM_WORLD, &req_np);
+        MPI_Irecv(&nc, 1, MPI_INT, 0, 3, MPI_COMM_WORLD, &req_nc);
+        MPI_Irecv(&size, 1, MPI_INT, 0, 4, MPI_COMM_WORLD, &req_size);
     }
-    else if (WorldSize == 1 || (WorldSize == 2 && WorldRank == (WorldSize-1)) || WorldRank == (WorldSize-2))
+    else if (WorldRank == 0)
     {
         // Precompute np, nc, and size on Rank WorldSize-2
-        mfem::RefinedGeometry *RefG;
-        np = nc = size = 0;
-        for (int i = 0; i < mesh.GetNE(); i++)
-        {
-            mfem::Geometry::Type geom = mesh.GetElementBaseGeometry(i);
-            int nv = mfem::Geometries.GetVertices(geom)->GetNPoints();
-            RefG = mfem::GlobGeometryRefiner.Refine(geom, 0, 1);
-            np += RefG->RefPts.GetNPoints();
-            nc += RefG->RefGeoms.Size() / nv;
-            size += (RefG->RefGeoms.Size() / nv) * (nv + 1);
-        }
-    }
-    if (WorldRank < (WorldSize-2))
-    {
-        // Send the compute values for np, nc, and size to the relevant ranks
-        for (int ii=0; ii<WorldRank; ii++)
-        {
-            MPI_Send(&np, 1, MPI_INT, ii, (2+ii), MPI_COMM_WORLD);
-            MPI_Send(&nc, 1, MPI_INT, ii, (2+ii*WorldSize), MPI_COMM_WORLD);
-            MPI_Send(&size, 1, MPI_INT, ii, (2+2*ii*WorldSize), MPI_COMM_WORLD);
+        writer.SetupWriteParameters();
+        np = writer.GetNumPoints();
+        nc = writer.GetNumElements();
+        size = writer.GetElementDataSize();
+
+        if (WorldSize > 1)
+        {    
+            for (int ii=1; ii<WorldSize; ii++)
+            {
+                MPI_Send(&np, 1, MPI_INT, ii, 2, MPI_COMM_WORLD);
+                MPI_Send(&nc, 1, MPI_INT, ii, 3, MPI_COMM_WORLD);
+                MPI_Send(&size, 1, MPI_INT, ii, 4, MPI_COMM_WORLD);
+            }
         }
     }
 
@@ -223,284 +216,31 @@ int main(int argc, char** argv)
     // All ranks must wait for the solution to continue
     MPI_Barrier(MPI_COMM_WORLD);
 
+    std::chrono::time_point<std::chrono::system_clock> start;
+
+    if (WorldRank == 0) {start = std::chrono::system_clock::now();} // Start timer
+
     bool RankWritePoints = false;
-    bool RankWriteCells = false;
-    bool RankWriteCellType = false;
-    bool RankWriteCellMaterial = false;
+    bool RankWriteElements = false;
+    bool RankWriteElementTypes = false;
+    bool RankWriteElementMaterials = false;
     bool RankWriteField1 = false; // Field1 = displacements u
     bool RankWriteField2 = false; // Field2 = micro displacement gradient phi
 
     // Divide up the work depending on the number of ranks 
-    // NOTE: errors are not properly thrown to avoid deadlocks
-    switch (WorldSize)
-    {
-        case 1:
-            RankWritePoints = true;
-            RankWriteCells = true;
-            RankWriteCellType = true;
-            RankWriteCellMaterial = true;
-            RankWriteField1 = true;
-            RankWriteField2 = true;
-            break;
-        case 2:
-            switch (WorldRank)
-            {
-                case 0:
-                    RankWritePoints = true;
-                    RankWriteCells = true;
-                    RankWriteCellType = true;
-                    RankWriteCellMaterial = true;
-                    break;
-                case 1: 
-                    RankWriteField1 = true;
-                    RankWriteField2 = true;
-                    break;
-            }
-            break;
-        case 3:
-            switch (WorldRank)
-            {
-                case 0:
-                    RankWritePoints = true;
-                    RankWriteCells = true;
-                    break;
-                case 1:
-                    RankWriteCellType = true;
-                    RankWriteCellMaterial = true;
-                    RankWriteField1 = true;
-                    break;
-                case 2:
-                    RankWriteField2 = true;
-                    break;
-            }
-            break;
-        case 4:
-            switch (WorldRank)
-            {
-                case 0:
-                    RankWritePoints = true;
-                    break;
-                case 1:
-                    RankWriteCells = true;
-                    RankWriteCellType = true;
-                    RankWriteCellMaterial = true;
-                    break;
-                case 2:
-                    RankWriteField1 = true;
-                    break;
-                case 3:
-                    RankWriteField2 = true;
-                    break;
-            }
-            break;
-        case 5:
-            switch (WorldRank)
-            {
-                case 0:
-                    RankWritePoints = true;
-                    break;
-                case 1:
-                    RankWriteCells = true;
-                    break;
-                case 2:
-                    RankWriteCellType = true;
-                    RankWriteCellMaterial = true;
-                    break;
-                case 3:
-                    RankWriteField1 = true;
-                    break;
-                case 4:
-                    RankWriteField2 = true;
-                    break;
-            }
-            break;
-        case 6:
-            switch (WorldRank)
-            {
-                case 0:
-                    RankWritePoints = true;
-                    break;
-                case 1:
-                    RankWriteCells = true;
-                    break;
-                case 2:
-                    RankWriteCellType = true;
-                    break;
-                case 3:
-                    RankWriteCellMaterial = true;
-                    break;
-                case 4:
-                    RankWriteField1 = true;
-                    break;
-                case 5:
-                    RankWriteField2 = true;
-                    break;
-            }
-            break;
-    }
+    writer.DetermineRankWork(WorldSize, WorldRank, RankWritePoints, RankWriteElements, 
+                            RankWriteElementTypes, RankWriteElementMaterials, RankWriteField1,
+                            RankWriteField2);
+    if (WorldRank > 0) {writer.SetValuesForRank(np, nc, size);}
 
     // Get the data for the rank and format it into a string
-    std::ostringstream oss;
-    if (RankWritePoints)
-    {
-        mfem::RefinedGeometry *RefG;
-        mfem::DenseMatrix pmat;
-
-        oss << "# vtk DataFile Version 3.0\n" << "Generated by VTKWriter\n";
-        oss << "ASCII\n" << "DATASET UNSTRUCTURED_GRID\n";
-        oss << "POINTS " << np << " double\n";
-        for (int i = 0; i < mesh.GetNE(); i++)
-        {
-            RefG = mfem::GlobGeometryRefiner.Refine(mesh.GetElementBaseGeometry(i), 0, 1);
-            mesh.GetElementTransformation(i)->Transform(RefG->RefPts, pmat);
-
-            for (int j = 0; j < pmat.Width(); j++)
-            {
-                oss << pmat(0, j) << ' ';
-                if (pmat.Height() > 1)
-                {
-                    oss << pmat(1, j) << ' ';
-                    if (pmat.Height() > 2)
-                    {
-                        oss << pmat(2, j);
-                    }
-                    else
-                    {
-                        oss << 0.0;
-                    }
-                }
-                else
-                {
-                    oss << 0.0 << ' ' << 0.0;
-                }
-                oss << '\n';
-            }
-        }
-    }
-    if (RankWriteCells)
-    {
-        mfem::RefinedGeometry *RefG;
-        oss << "CELLS " << nc << ' ' << size << '\n';
-        np = 0;
-        for (int i = 0; i < mesh.GetNE(); i++)
-        {
-           mfem::Geometry::Type geom = mesh.GetElementBaseGeometry(i);
-           int nv = mfem::Geometries.GetVertices(geom)->GetNPoints();
-           RefG = mfem::GlobGeometryRefiner.Refine(geom, 0, 1);
-           mfem::Array<int> &RG = RefG->RefGeoms;
-     
-           for (int j = 0; j < RG.Size(); )
-           {
-              oss << nv;
-              for (int k = 0; k < nv; k++, j++)
-              {
-                 oss << ' ' << np + RG[j];
-              }
-              oss << '\n';
-           }
-           np += RefG->RefPts.GetNPoints();
-        }
-    }
-    if (RankWriteCellType)
-    {
-        mfem::RefinedGeometry *RefG;
-        oss << "CELL_TYPES " << nc << '\n';
-        for (int i = 0; i < mesh.GetNE(); i++)
-        {
-           mfem::Geometry::Type geom = mesh.GetElementBaseGeometry(i);
-           int nv = mfem::Geometries.GetVertices(geom)->GetNPoints();
-           RefG = mfem::GlobGeometryRefiner.Refine(geom, 0, 1);
-           mfem::Array<int> &RG = RefG->RefGeoms;
-           int vtk_cell_type = mfem::VTKGeometry::Map[geom];
-     
-           for (int j = 0; j < RG.Size(); j += nv)
-           {
-              oss << vtk_cell_type << '\n';
-           }
-        }
-    }
-    if (RankWriteCellMaterial)
-    {
-        mfem::RefinedGeometry *RefG;
-        oss << "CELL_DATA " << nc << '\n'
-        << "SCALARS material int\n"
-        << "LOOKUP_TABLE default\n";
-        for (int i = 0; i < mesh.GetNE(); i++)
-        {
-            mfem::Geometry::Type geom = mesh.GetElementBaseGeometry(i);
-            int nv = mfem::Geometries.GetVertices(geom)->GetNPoints();
-            RefG = mfem::GlobGeometryRefiner.Refine(geom, 0, 1);
-            int attr = mesh.GetAttribute(i);
-            for (int j = 0; j < RefG->RefGeoms.Size(); j += nv)
-            {
-                oss << attr << '\n';
-            }
-        }
-    }
-    if (RankWriteField1)
-    {   
-        mfem::RefinedGeometry *RefG;
-        mfem::DenseMatrix vval, pmat;
-        std::string field_name = "u";
-
-        oss << "POINT_DATA " << np << "\n";
-        oss << "VECTORS " << field_name << " double\n";
-        for (int i = 0; i < mesh.GetNE(); i++)
-        {
-            RefG = mfem::GlobGeometryRefiner.Refine(mesh.GetElementBaseGeometry(i), 0, 1);
-            mfem::ElementTransformation* T = mesh.GetElementTransformation(i);
-            u.GetVectorValues(*T, RefG->RefPts, vval, &pmat);
-            for (int j = 0; j < vval.Width(); j++)
-            {
-                oss << vval(0, j) << ' ' << vval(1, j) << ' ';
-                if (vval.Height() == 2)
-                {
-                    oss << 0.0;
-                }
-                else
-                {
-                    oss << vval(2, j);
-                }
-                oss << '\n';
-            }
-        }
-    }
-    if (RankWriteField2)
-    {
-        mfem::RefinedGeometry *RefG;
-        mfem::DenseMatrix vval, pmat;
-        std::string field_name = "phi";
-
-        oss << "FIELD FieldData 1\n";
-        oss << field_name << ' ' << 9 << ' ' << np << " double\n"; 
-
-        for (int i = 0; i < mesh.GetNE(); i++)
-        {
-            RefG = mfem::GlobGeometryRefiner.Refine(mesh.GetElementBaseGeometry(i), 0, 1);
-            mfem::ElementTransformation* T = mesh.GetElementTransformation(i);
-            phi.GetVectorValues(*T, RefG->RefPts, vval, &pmat);
-            
-            if (mesh.SpaceDimension() == 2)
-            {
-                for (int j=0; j<vval.Width(); j++)
-                {
-                    oss << vval(0,j) << ' ' << vval(1,j) << ' ' << 0. << ' ';
-                    oss << vval(2,j) << ' ' << vval(3,j) << ' ' << 0. << ' ';
-                    oss << 0. << ' ' << 0. << ' ' << 0. << '\n';
-                }
-            }
-            else if (mesh.SpaceDimension() == 3)
-            {
-                for (int j=0; j<vval.Width(); j++)
-                {
-                    oss << vval(0,j) << ' ' << vval(1,j) << ' ' << vval(2,j) << ' ';
-                    oss << vval(3,j) << ' ' << vval(4,j) << ' ' << vval(5,j) << ' ';
-                    oss << vval(6,j) << ' ' << vval(7,j) << ' ' << vval(8,j) << '\n';
-                }
-            }
-        }
-    }
-    std::string RankData = oss.str();
+    if (RankWritePoints) {writer.WriteHeader(); writer.WriteNodes();}
+    if (RankWriteElements) {writer.WriteElements();}
+    if (RankWriteElementTypes) {writer.WriteElementTypes();}
+    if (RankWriteElementMaterials) {writer.WriteElementMaterials();}
+    if (RankWriteField1) {writer.WriteVectorField(u, "u");}   
+    if (RankWriteField2) {writer.WriteTensorField(phi, "phi");}
+    std::string RankData = writer.GetData();
     int RankDataSize = static_cast<int>(RankData.size());
 
     // Get offset for this rank
@@ -511,9 +251,18 @@ int main(int argc, char** argv)
     // Create the output file and write to it
     std::string filename = "../result" + std::to_string(WorldSize) + ".vtk";
     MPI_File file;
-    MPI_File_open(MPI_COMM_WORLD, filename.c_str(), MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
+    MPI_File_open(MPI_COMM_WORLD, filename.c_str(), MPI_MODE_CREATE, MPI_INFO_NULL, &file);
     MPI_File_write_at(file, offset, RankData.c_str(), RankDataSize, MPI_CHAR, MPI_STATUS_IGNORE);
     MPI_File_close(&file);
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    if (WorldRank == 0) 
+    {
+        auto end = std::chrono::system_clock::now();
+        std::chrono::duration<double> elapsed_time = end - start;
+        std::cout << "WorldSize: " << WorldSize << "\n";
+        std::cout << "File Write Time: " << elapsed_time.count() << "\n";
+    }
 
     if (WorldSize >= 3  && WorldRank >= (WorldSize-2))
     {

@@ -5,9 +5,6 @@
 #include "MicromorphicPartialAssemblyKernels.hpp"
 #include <memory>
 
-#include <iostream> // TAKE OUT BEFORE PUSHING
-
-
 enum Block
 {
     TopLeft,
