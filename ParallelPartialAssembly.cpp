@@ -15,8 +15,8 @@ int main(int argc, char** argv)
     double ls = 0.1;
 
     // Tell MFEM about the device
-    //mfem::Device device("cpu"); // used for serial timing
-    mfem::Device device("cuda");
+    mfem::Device device("cpu"); // used for serial timing
+    //mfem::Device device("cuda");
     device.Print();
 
     // Start the total finite element solve timer
@@ -47,8 +47,6 @@ int main(int argc, char** argv)
     block_offsets[1] = u_space.GetVSize();
     block_offsets[2] = phi_space.GetVSize();
     block_offsets.PartialSum();
-
-    std::cout << "Total DOF: " << block_offsets[2] << "\n";
 
     // Initialize solution, RHS, and aux vectors
     auto x = mfem::BlockVector(block_offsets);
@@ -144,7 +142,7 @@ int main(int argc, char** argv)
     A.AddMult(negative_x, b); 
 
     // Reset boundary condition values in RHS vector for the constrained operator
-    if (device.IsEnabled()) {b.HostWrite();}
+    if (device.IsEnabled()) {b.HostReadWrite();}
     for (int ii=0; ii<uBCDOFs.Size(); ii++) {b.GetBlock(0)[uBCDOFs[ii]] = 0.;}
     for (int ii=0; ii<phiBCDOFs.Size(); ii++) {b.GetBlock(1)[phiBCDOFs[ii]] = 0.;}
     for (int ii=0; ii<phi0BCDOFs.Size(); ii++) {b.GetBlock(1)[phi0BCDOFs[ii]] = 0.001;}
@@ -186,8 +184,7 @@ int main(int argc, char** argv)
     for (int ii=0; ii<a1_diag.Size(); ii++) {GlobalDiag[ii] = a1_diag[ii];}
     for (int ii=0; ii<a4_diag.Size(); ii++) {GlobalDiag[ii+block_offsets[1]] = a4_diag[ii];}
 
-    // Start the solver timer and print CUDA block size used
-    std::cout << "CUDA Block Size Used: " << MFEM_CUDA_BLOCKS << "\n";
+    // Start the solver timer
     auto start_solver = std::chrono::system_clock::now();
 
     // Solve the linear system
@@ -197,11 +194,18 @@ int main(int argc, char** argv)
     solver.SetKDim(100);
     solver.SetPreconditioner(preconditioner);
     solver.iterative_mode = false;
-    solver.SetRelTol(1e-4);
-    solver.SetAbsTol(1e-8);
-    solver.SetMaxIter(6000);
+    solver.SetRelTol(5e-5);
+    solver.SetAbsTol(5e-9);
+    solver.SetMaxIter(10000); // The problem is very ill conditioned and requires a large number of iterations
     solver.SetPrintLevel(1);
     solver.Mult(b, x);
+
+    // Print CUDA block size used
+    if (device.IsEnabled()) {std::cout << "CUDA Block Size Used: " << MFEM_CUDA_BLOCKS << "\n";}
+    else {std::cout << "Serial\n";}
+
+    // Print total DOFS
+    std::cout << "Total DOFs: " << block_offsets[2] << "\n";
 
     // End solver timer and print elapsed time
     auto end_solver = std::chrono::system_clock::now();
