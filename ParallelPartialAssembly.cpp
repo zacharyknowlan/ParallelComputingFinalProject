@@ -14,9 +14,9 @@ int main(int argc, char** argv)
     double Lambda = 113636.36363636363;
     double ls = 0.1;
 
-    // Tell MFEM about the device
-    mfem::Device device("cpu"); // used for serial timing
-    //mfem::Device device("cuda");
+    // Tell MFEM about the device (GPU)
+    //mfem::Device device("cpu"); // used for serial timing
+    mfem::Device device("cuda");
     device.Print();
 
     // Start the total finite element solve timer
@@ -78,8 +78,8 @@ int main(int argc, char** argv)
     phi_space.GetEssentialTrueDofs(LeftEdge, phi0BCDOFs, 0);
     if (device.IsEnabled())
     {
-        x.HostWrite();
-        negative_x.HostWrite();
+        x.HostReadWrite();
+        negative_x.HostReadWrite();
     }
     for (int ii=0; ii<phi0BCDOFs.Size(); ii++)
     {

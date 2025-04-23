@@ -135,7 +135,7 @@ int main(int argc, char** argv)
     int offset = std::accumulate(WorldDataSizes.begin(), WorldDataSizes.begin() + WorldRank, 0);
 
     // Create the output file and write to it
-    std::string filename = "../result" + std::to_string(WorldSize) + ".vtk";
+    std::string filename = "../result.vtk";
     MPI_File file;
     MPI_File_open(MPI_COMM_WORLD, filename.c_str(), MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
     MPI_File_write_at(file, offset, RankData.c_str(), RankDataSize, MPI_CHAR, MPI_STATUS_IGNORE);

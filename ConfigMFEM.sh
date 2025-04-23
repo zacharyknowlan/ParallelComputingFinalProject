@@ -6,7 +6,7 @@ module load cmake/3.26.3-2duxfcd
 
 # Unzip and build MFEM (CUDA architecture is set for GeForce RTX 4060)
 mkdir mfem-4.7/
-#tar -xzvf mfem-4.7.tgz mfem-4.7/
+tar -xzvf mfem-4.7.tgz mfem-4.7/
 cmake -S mfem-4.7/ -B mfem-4.7/build/ \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DCMAKE_INSTALL_PREFIX=mfem-4.7/build/install/ \
