@@ -20,7 +20,8 @@ SpeedUp5 = [Times5[0]/Times5[i] for i in range(1,len(Times5))] # Corresponds to 
 SpeedUp6 = [Times6[0]/Times6[i] for i in range(1,len(Times6))] # Corresponds to DOF[5]
 
 # Weak scaling speedup for MPI VTKWriter
-WeakScalingSpeedUp = [Times1[0]/Times1[0], SpeedUp2[0], SpeedUp3[1], SpeedUp4[2], SpeedUp5[3], SpeedUp6[4]]
+WeakScalingSpeedUp = [Times1[0]/Times1[0], Times1[0]/Times2[0], Times1[0]/Times3[0], 
+                      Times1[0]/Times4[0], Times1[0]/Times5[0], Times1[0]/Times6[0]]
 Description = ["1 Rank,\n 17M DOF", "2 Ranks,\n 34M DOF", "3 Ranks,\n 51M DOF", 
                 "4 Ranks,\n 68M DOF", "5 Ranks,\n 85M DOF", "6 Ranks,\n 102M DOF"]
 Colors = ["royalblue", "firebrick", "forestgreen", "peru", "mediumpurple", "navy"]
@@ -93,7 +94,7 @@ plt.close(fig2)
 
 fig3 = plt.figure(figsize=[7,5.25])
 plt.bar(Description, WeakScalingSpeedUp, color=Colors)
-plt.ylim([0.9, 1.5])
+plt.ylim([0., 1.05])
 plt.yticks(fontsize=14)
 plt.ylabel("Speed Up", fontsize=14)
 plt.xticks(fontsize=14)
