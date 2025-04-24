@@ -17,3 +17,5 @@ With that being said, it has only been tested for `mpich` on the SCOREC machines
 * A sample mesh with 10000 elements (342000 DOF for the finite element spaces used) has been provided.
 * Both `ParallelPartialAssembly` and `ParallelVTKWriter` use the **relative** path of the mesh file. 
 These executables must be launched from the `build/` directory to be able to read the mesh.
+* To run `ParallelPartialAssembly` use `./ParallelPartialAssembly` from the build directory. This will run with binary with the provided mesh. This assumes that MFEM has been built with CUDA as outlined above.
+* To run `ParallelVTKWriter` use `mpirun -np 6 ./ParallelVTKWriter` where the number of processes can be any number from 1 to 6. This will run the parallel file writer with the provided mesh. This assumes that an MPI module has been loaded and MFEM has been built serially as outlined above.
